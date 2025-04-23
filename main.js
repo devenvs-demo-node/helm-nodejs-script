@@ -12,6 +12,9 @@ const kc = new k8s.KubeConfig();
 kc.loadFromFile(PATH);
 const k8sApi = kc.makeApiClient(k8s.CoreV1Api);
 const k8sApi2 = kc.makeApiClient(k8s.AppsV1Api);
+// const k8sAPi3 = kc.makeApiClient(k8s.Extensions_v1beta1Api)
+const k8sNetworkingApi = kc.makeApiClient(k8s.NetworkingV1Api);
+
 
 app.get("/", (req, res) => {
   res.send(
@@ -76,12 +79,34 @@ app.get("/pod-status", async (req, res) => {
         })),
       }));
 
+      const ingresses = await k8sNetworkingApi.listNamespacedIngress(options);
+
+      const filteredIngresses = ingresses.items.filter(
+        (ing) =>
+          ing.metadata.annotations &&
+          ing.metadata.annotations["meta.helm.sh/release-name"] === releaseName
+      );
+
+      const ingressStatus = filteredIngresses.map((ing) => ({
+        name: ing.metadata.name,
+        releaseName: releaseName,
+        rules: ing.spec.rules.map((rule) => ({
+          host: rule.host,
+          paths: rule.http.paths.map((path) => ({
+            path: path.path,
+            serviceName: path.backend.service.name,
+            servicePort: path.backend.service.port.number,
+          })),
+        })),
+      }));
+
       res.json({
         namespace,
         releaseName: releaseName || "all",
         podsCount: podStatus.length,
         pods: podStatus,
         services: svcStatus,
+        ingresses: ingressStatus,
       });
     } else {
       res.json("Release does not exist");
