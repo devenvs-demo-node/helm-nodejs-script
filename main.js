@@ -42,6 +42,7 @@ app.get("/pod-status", async (req, res) => {
     const options = { namespace: namespace };
     const pods = await k8sApi.listNamespacedPod({ namespace: namespace });
     const deploys = await k8sApi2.listNamespacedDeployment(options);
+    const services = await k8sApi.listNamespacedService(options);
 
     const matched = deploys.items.find(
       (deploy) =>
@@ -57,6 +58,22 @@ app.get("/pod-status", async (req, res) => {
         status: pod.status.phase,
         ready: isPodReady(pod),
         createdAt: pod.metadata.creationTimestamp,
+        releaseName: releaseName,
+      }));
+
+      const filteredServices = services.items.filter(
+        (svc) =>
+          svc.metadata.annotations &&
+          svc.metadata.annotations["meta.helm.sh/release-name"] === releaseName
+      );
+
+      const svcStatus = filteredServices.map((svc) => ({
+        name: svc.metadata.name,
+        releaseName: releaseName,
+        port: svc.spec.ports.map((p) => ({
+          targetPort: p.targetPort || "no target port",
+          nodePort: p.nodePort || "no node port",
+        })),
       }));
 
       res.json({
@@ -64,6 +81,7 @@ app.get("/pod-status", async (req, res) => {
         releaseName: releaseName || "all",
         podsCount: podStatus.length,
         pods: podStatus,
+        services: svcStatus,
       });
     } else {
       res.json("Release does not exist");
